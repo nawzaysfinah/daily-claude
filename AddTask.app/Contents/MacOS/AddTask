@@ -1,0 +1,125 @@
+#!/bin/bash
+
+# daily-claude: AddTask
+# Quickly add a task to your TASKS.md from anywhere.
+# https://github.com/nawzaysfinah/daily-claude
+
+CONFIG_FILE="$HOME/.daily-claude"
+
+# ── First-run setup ────────────────────────────────────────────────────────────
+if [ ! -f "$CONFIG_FILE" ]; then
+  # Welcome message
+  osascript -e 'display dialog "Welcome to daily-claude! 👋
+
+Let'\''s set up your TASKS.md file. In the next step, choose (or create) a folder where your tasks will live." with title "daily-claude Setup" buttons {"Get Started"} default button "Get Started"' 2>/dev/null
+
+  # Let user pick a folder
+  CHOSEN_DIR=$(osascript -e 'tell application "Finder"
+    set chosenFolder to choose folder with prompt "Choose a folder for your TASKS.md:"
+    return POSIX path of chosenFolder
+  end tell' 2>/dev/null)
+
+  if [ -z "$CHOSEN_DIR" ]; then
+    exit 0  # User cancelled
+  fi
+
+  # Remove trailing slash
+  CHOSEN_DIR="${CHOSEN_DIR%/}"
+  TASKS_FILE="$CHOSEN_DIR/TASKS.md"
+
+  # Save config
+  echo "TASKS_FILE=$TASKS_FILE" > "$CONFIG_FILE"
+
+  # Create TASKS.md if it doesn't exist
+  if [ ! -f "$TASKS_FILE" ]; then
+    cat > "$TASKS_FILE" << 'TEMPLATE'
+# Tasks
+
+<!-- daily-claude: Claude reads this file each morning for your daily briefing. -->
+<!-- Format: - [ ] Task description -->
+
+## 🔴 Today
+
+
+## 🟡 This Week
+
+
+## 🟢 Backlog
+
+
+---
+TEMPLATE
+    echo "_Created: $(date '+%Y-%m-%d')_" >> "$TASKS_FILE"
+  fi
+
+  osascript -e "display notification \"TASKS.md created at $TASKS_FILE\" with title \"daily-claude ready ✓\""
+fi
+
+# ── Load config ────────────────────────────────────────────────────────────────
+source "$CONFIG_FILE"
+
+if [ ! -f "$TASKS_FILE" ]; then
+  osascript -e 'display dialog "TASKS.md not found. Please delete ~/.daily-claude and relaunch to reconfigure." with title "daily-claude Error" buttons {"OK"}' 2>/dev/null
+  exit 1
+fi
+
+# ── Pick a category ────────────────────────────────────────────────────────────
+CATEGORY=$(osascript -e 'choose from list {"🔴 Today", "🟡 This Week", "🟢 Backlog"} with title "Add Task" with prompt "Which list?" default items {"🔴 Today"}' 2>/dev/null)
+
+if [ "$CATEGORY" = "false" ] || [ -z "$CATEGORY" ]; then
+  exit 0
+fi
+
+# Map emoji label to section header
+case "$CATEGORY" in
+  "🔴 Today")    SECTION="## 🔴 Today" ;;
+  "🟡 This Week") SECTION="## 🟡 This Week" ;;
+  "🟢 Backlog")  SECTION="## 🟢 Backlog" ;;
+esac
+
+# ── Get task text ──────────────────────────────────────────────────────────────
+TASK=$(osascript -e 'display dialog "What'\''s your task?" with title "Add Task" default answer "" buttons {"Cancel", "Add ✓"} default button "Add ✓"' -e 'text returned of result' 2>/dev/null)
+
+if [ -z "$TASK" ]; then
+  exit 0
+fi
+
+# ── Insert task under the correct section ──────────────────────────────────────
+# Use Python for reliable section-aware insertion
+python3 - "$TASKS_FILE" "$SECTION" "$TASK" << 'PYEOF'
+import sys
+
+tasks_file = sys.argv[1]
+section = sys.argv[2]
+task = sys.argv[3]
+new_line = f"- [ ] {task}"
+
+with open(tasks_file, 'r') as f:
+    lines = f.readlines()
+
+inserted = False
+result = []
+i = 0
+while i < len(lines):
+    result.append(lines[i])
+    # After finding the target section header, insert the task
+    if not inserted and lines[i].strip() == section:
+        # Skip blank lines immediately after header
+        i += 1
+        while i < len(lines) and lines[i].strip() == '':
+            result.append(lines[i])
+            i += 1
+        result.append(new_line + '\n')
+        inserted = True
+        continue
+    i += 1
+
+# If section not found, append to end
+if not inserted:
+    result.append(f'\n{section}\n{new_line}\n')
+
+with open(tasks_file, 'w') as f:
+    f.writelines(result)
+PYEOF
+
+osascript -e "display notification \"Added to $CATEGORY: $TASK\" with title \"Task added ✓\""
