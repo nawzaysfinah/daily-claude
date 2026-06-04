@@ -40,6 +40,7 @@ Let'\''s set up your TASKS.md file. In the next step, choose (or create) a folde
 
 ## 🔴 Today
 
+- [ ] Your first task — replace me!
 
 ## 🟡 This Week
 
@@ -59,7 +60,11 @@ fi
 source "$CONFIG_FILE"
 
 if [ ! -f "$TASKS_FILE" ]; then
-  osascript -e 'display dialog "TASKS.md not found. Please delete ~/.daily-claude and relaunch to reconfigure." with title "daily-claude Error" buttons {"OK"}' 2>/dev/null
+  ACTION=$(osascript -e 'display dialog "TASKS.md not found at the saved path. What would you like to do?" with title "daily-claude Error" buttons {"Cancel", "Reset Config"} default button "Reset Config"' -e 'button returned of result' 2>/dev/null)
+  if [ "$ACTION" = "Reset Config" ]; then
+    rm -f "$CONFIG_FILE"
+    exec "$0"  # Relaunch to trigger first-run setup
+  fi
   exit 1
 fi
 
@@ -100,21 +105,38 @@ with open(tasks_file, 'r') as f:
 inserted = False
 result = []
 i = 0
+in_section = False
+
 while i < len(lines):
-    result.append(lines[i])
-    # After finding the target section header, insert the task
-    if not inserted and lines[i].strip() == section:
-        # Skip blank lines immediately after header
+    line = lines[i]
+    stripped = line.strip()
+
+    if stripped == section:
+        in_section = True
+        result.append(line)
         i += 1
-        while i < len(lines) and lines[i].strip() == '':
-            result.append(lines[i])
-            i += 1
+        continue
+
+    if in_section and (stripped.startswith('## ') or stripped == '---'):
+        # End of section — insert task before this boundary
+        # Ensure there's a blank line before the new task if needed
+        if result and result[-1].strip() != '':
+            result.append('\n')
         result.append(new_line + '\n')
         inserted = True
-        continue
+        in_section = False
+
+    result.append(line)
     i += 1
 
-# If section not found, append to end
+# Section was last in file (no following ## or ---)
+if in_section and not inserted:
+    if result and result[-1].strip() != '':
+        result.append('\n')
+    result.append(new_line + '\n')
+    inserted = True
+
+# Section not found — append it
 if not inserted:
     result.append(f'\n{section}\n{new_line}\n')
 

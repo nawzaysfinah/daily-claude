@@ -5,6 +5,7 @@
 
 ## 🔴 Today
 
+- [ ] Your first task — replace me!
 
 ## 🟡 This Week
 
