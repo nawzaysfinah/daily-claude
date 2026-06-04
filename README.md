@@ -1,82 +1,131 @@
 # daily-claude 🌅
 
-**Your AI-powered morning OS — built on Claude Cowork.**
+> An agentic daily briefing system — Claude reads your tasks, pulls news and weather, checks your calendar, and delivers a morning report. Every day. Automatically.
 
-daily-claude gives you a frictionless daily system: a one-click app to capture tasks anywhere, and an automated morning briefing from Claude that reads your to-do list, pulls today's news, checks the weather, and shows your calendar — every morning, automatically.
-
----
-
-## What it does
-
-Every morning, Claude runs a briefing that covers:
-
-- ✅ **Tasks** — your open to-dos from `TASKS.md`, sorted by priority
-- 📰 **Top news** — 5 headlines from today
-- 🌤️ **Weather** — for your location
-- 📅 **Calendar** — today's events from Google Calendar (optional)
-
-Capture tasks instantly with the **Add Task** desktop app — a native macOS popup that drops tasks directly into your `TASKS.md` in the right section.
+![Platform](https://img.shields.io/badge/platform-macOS-lightgrey?logo=apple)
+![Claude](https://img.shields.io/badge/Claude-Cowork-orange?logo=anthropic)
+![Shell](https://img.shields.io/badge/shell-bash-4EAA25?logo=gnubash&logoColor=white)
+![License](https://img.shields.io/badge/license-MIT-green)
 
 ---
 
-## Quick install (macOS)
+## The Idea
+
+Most productivity systems fail because they require you to *work the system*. You have to open the app, review the list, decide what matters.
+
+daily-claude flips this: the agent does the review and delivers a single, opinionated briefing to you. You start the day informed and focused without touching a dashboard.
+
+It's also a practical example of a **context-aggregating agent** — a pattern that's increasingly common in production AI systems. The morning briefing prompt is designed to pull structured context from multiple sources (file, web, calendar API), reason over it, and produce a single coherent output under a token budget.
+
+---
+
+## What It Delivers Each Morning
+
+```
+📋 Tasks       — open to-dos from TASKS.md, surfaced by priority
+📰 News        — 5 headlines relevant to your work/interests
+🌤️  Weather     — today's forecast for your location
+📅 Calendar    — today's events from Google Calendar (optional)
+```
+
+All in one message, under 300 words, formatted for scanning.
+
+---
+
+## System Architecture
+
+```
+                    ┌─────────────────────────────────┐
+                    │        Claude Cowork Agent       │
+                    │                                  │
+  8:00am cron ─────►│  1. Read TASKS.md               │
+                    │  2. WebSearch (news headlines)   │
+                    │  3. WebSearch (weather)          │
+                    │  4. Google Calendar MCP          │
+                    │  5. Synthesise → briefing        │
+                    └──────────────┬──────────────────┘
+                                   │
+                             Morning briefing
+                             delivered in chat
+                                   
+  ┌────────────────────────────────────────────────────┐
+  │               Add Task (macOS .app)                │
+  │                                                    │
+  │   Global hotkey / dock click                       │
+  │        └─► Category picker (Today/Week/Backlog)    │
+  │              └─► Task input                        │
+  │                    └─► Appends to TASKS.md         │
+  │                          └─► macOS notification    │
+  └────────────────────────────────────────────────────┘
+```
+
+Two components, one shared file (`TASKS.md`) as the interface between them.
+
+---
+
+## Context Engineering Notes
+
+The morning briefing is a practical example of **context window management for agents**:
+
+**Structured input, not freeform.** `TASKS.md` uses a consistent format (`- [ ]` / `- [x]`, three priority sections) so the agent can parse it reliably without needing to infer structure from messy text.
+
+**Token budget constraint.** The briefing prompt caps output at 300 words. This forces the agent to prioritise — a longer unconstrained output would be less useful than a tighter curated one.
+
+**Multi-source aggregation.** Rather than separate calls for tasks / news / weather, everything is synthesised in one prompt. This gives Claude the full context to make connections (e.g. "you have an outdoor meeting at 2pm and rain is forecast").
+
+**Persistent memory via flat file.** `TASKS.md` acts as durable agent memory across sessions. This sidesteps the need for a database or external state store for a personal productivity agent.
+
+---
+
+## Quick Install (macOS)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/nawzaysfinah/daily-claude/main/setup.sh | bash
 ```
 
-That's it. The installer:
-- Downloads and installs the **Add Task** app to your Desktop
-- Clears the macOS security quarantine so it opens immediately
-- Prints next steps for Claude Cowork setup
+This downloads and installs the Add Task app to your Desktop and clears macOS security quarantine.
 
 ---
 
-## Manual install
+## Manual Install
 
-1. Download this repo as a ZIP → click **Code → Download ZIP**
-2. Unzip it
-3. Drag `AddTask.app` to your Desktop (or Applications)
-4. Right-click → **Open** the first time (macOS security step, one-time only)
+1. Download this repo: **Code → Download ZIP**
+2. Unzip and drag `AddTask.app` to your Desktop or Applications
+3. Right-click → **Open** the first time (one-time macOS security step)
 
 ---
 
-## Setting up the morning briefing
+## Setting Up the Morning Briefing
 
-daily-claude's briefing runs inside **[Claude Cowork](https://claude.ai)** — Anthropic's desktop app.
+The briefing runs as a scheduled task inside **[Claude Cowork](https://claude.ai)** (Anthropic's desktop app).
 
-**Step 1 — Install Claude Cowork**
-Download it from [claude.ai](https://claude.ai) and sign in.
+**Step 1 — Install Claude Cowork** and sign in at [claude.ai](https://claude.ai).
 
-**Step 2 — Set up a scheduled task**
-Open Claude Cowork and say:
-
-> "Schedule a daily morning briefing at 8am using the skill file in this repo"
-
-Or paste this prompt directly:
+**Step 2 — Schedule the briefing.** Open Cowork and paste:
 
 ```
-Schedule a daily morning briefing at 8am. Each morning, read my TASKS.md, 
-search for today's top news headlines, check the weather for my location, 
-and list my Google Calendar events for the day. Format it with clear sections 
-and keep it under 300 words.
+Schedule a daily morning briefing at 8am. Each morning:
+1. Read my TASKS.md and surface open tasks by priority section
+2. Search for today's top 5 news headlines
+3. Check the weather for my location
+4. List my Google Calendar events for today
+
+Format with clear sections. Keep it under 300 words. Lead with anything time-sensitive.
 ```
 
-**Step 3 — Connect your calendars (optional)**
-In Claude Cowork, connect Google Calendar when prompted. Claude will automatically pull today's events into the briefing.
+**Step 3 — Connect Google Calendar** (optional) — Cowork will prompt you on first run.
 
-**Step 4 — Point Claude to your TASKS.md**
-When you first open Add Task, it will ask where to store your `TASKS.md`. Pick any folder — Claude Cowork reads it from there each morning.
+**Step 4 — Point Claude to your TASKS.md** — the Add Task app asks on first launch; pick any folder. Cowork reads it from there each morning.
 
 ---
 
-## How TASKS.md works
+## TASKS.md Format
 
 ```markdown
 # Tasks
 
 ## 🔴 Today
-- [ ] Review pull request from Amir
+- [ ] Review PR from Amir
 - [ ] Send invoice to client
 
 ## 🟡 This Week
@@ -88,43 +137,23 @@ When you first open Add Task, it will ask where to store your `TASKS.md`. Pick a
 - [ ] Clean up Notion workspace
 ```
 
-- `- [ ]` = open task (Claude reads these)
-- `- [x]` = done (Claude skips these)
+`- [ ]` = open (agent reads) · `- [x]` = done (agent skips)
 
-The Add Task app inserts into the right section automatically.
-
----
-
-## Add Task app — how it works
-
-**First launch:** picks a folder for your `TASKS.md` and saves a config at `~/.daily-claude`.
-
-**Every launch after:** shows a two-step popup:
-
-1. Pick a category — Today / This Week / Backlog
-2. Type your task
-
-Done. The task is appended to `TASKS.md` and a macOS notification confirms it.
-
-**To reconfigure** (change where TASKS.md lives):
-```bash
-rm ~/.daily-claude
-```
-Then relaunch the app.
+The Add Task app inserts into the correct section automatically — no manual editing needed.
 
 ---
 
-## Uninstall
+## Add Task App
 
+A minimal native macOS app built as a Python-backed `.app` bundle.
+
+**First launch:** prompts for your TASKS.md location, saves config to `~/.daily-claude`.
+
+**Every launch:** two-step popup — pick category → type task → done. Appends to TASKS.md and fires a macOS notification.
+
+**To reconfigure:**
 ```bash
-# Remove the app
-rm -rf ~/Desktop/"Add Task.app"
-
-# Remove config
-rm ~/.daily-claude
-
-# Optionally remove your TASKS.md
-# (keep it if you want your task history)
+rm ~/.daily-claude  # then relaunch
 ```
 
 ---
@@ -132,26 +161,36 @@ rm ~/.daily-claude
 ## Requirements
 
 - macOS 12 Monterey or later
-- [Claude Cowork](https://claude.ai) (free or paid) for the morning briefing
 - Python 3 (pre-installed on macOS 12+)
+- [Claude Cowork](https://claude.ai) for the morning briefing
 
 ---
 
-## Contributing
+## Uninstall
 
-PRs welcome. Ideas for next features:
-- [ ] Windows / Linux support
+```bash
+rm -rf ~/Desktop/"Add Task.app"
+rm ~/.daily-claude
+# optionally: rm ~/path/to/TASKS.md
+```
+
+---
+
+## What's Next
+
 - [ ] Menu bar app version
+- [ ] Windows / Linux support
 - [ ] Sync TASKS.md to iCloud / Notion
-- [ ] Weekly review prompt
+- [ ] Weekly review agent (Sundays)
 - [ ] Due dates and reminders
 
 ---
 
-## License
+## Related Projects
 
-MIT — use it, fork it, build on it.
+- [`build-llm-apps`](https://github.com/nawzaysfinah/build-llm-apps) — beginner guide to LLM apps including agentic patterns
+- [`pdf-knowledge-graph-pipeline`](https://github.com/nawzaysfinah/pdf-knowledge-graph-pipeline) — more complex multi-stage agentic pipeline
 
 ---
 
-Made with ☕ and Claude.
+*Built by [Syaz](https://syaz.super.site) — AI Lecturer @ ITE College West, Singapore*
