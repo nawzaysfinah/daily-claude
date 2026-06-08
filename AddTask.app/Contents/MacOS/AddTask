@@ -166,7 +166,11 @@ if [ -z "$SCRIPTS_DIR" ] || [ ! -f "$SCRIPTS_DIR/parse_when.py" ]; then
   exit 0
 fi
 
-CAL_CHOICE=$(osascript -e 'choose from list {"Yes", "No"} with title "Add to Calendar?" with prompt "'"$TASK"'" default items {"No"}' 2>/dev/null)
+# Safe display version for osascript prompts (strip " and ')
+DISPLAY_TASK="${TASK//\"/}"
+DISPLAY_TASK="${DISPLAY_TASK//\'/}"
+
+CAL_CHOICE=$(osascript -e 'choose from list {"Yes", "No"} with title "Add to Calendar?" with prompt "'"$DISPLAY_TASK"'" default items {"No"}' 2>/dev/null)
 
 if [ "$CAL_CHOICE" != "Yes" ]; then
   exit 0
@@ -201,30 +205,27 @@ if [ -z "$PARSED" ]; then
   exit 0
 fi
 
-S_YEAR=$(echo "$PARSED" | sed -n '1p' | awk '{print $1}')
-S_MON=$(echo  "$PARSED" | sed -n '1p' | awk '{print $2}')
-S_DAY=$(echo  "$PARSED" | sed -n '1p' | awk '{print $3}')
-S_HOUR=$(echo "$PARSED" | sed -n '1p' | awk '{print $4}')
-S_MIN=$(echo  "$PARSED" | sed -n '1p' | awk '{print $5}')
-
-E_YEAR=$(echo "$PARSED" | sed -n '2p' | awk '{print $1}')
-E_MON=$(echo  "$PARSED" | sed -n '2p' | awk '{print $2}')
-E_DAY=$(echo  "$PARSED" | sed -n '2p' | awk '{print $3}')
-E_HOUR=$(echo "$PARSED" | sed -n '2p' | awk '{print $4}')
-E_MIN=$(echo  "$PARSED" | sed -n '2p' | awk '{print $5}')
-
+read S_YEAR S_MON S_DAY S_HOUR S_MIN <<< "$(echo "$PARSED" | sed -n '1p')"
+read E_YEAR E_MON E_DAY E_HOUR E_MIN <<< "$(echo "$PARSED" | sed -n '2p')"
 HUMAN_TIME=$(echo "$PARSED" | sed -n '3p')
 
+# Sanitize HUMAN_TIME for use in osascript dialog
+HUMAN_TIME_DISPLAY="${HUMAN_TIME//\"/}"
+
 # Confirm before creating
-CONFIRM=$(osascript -e "display dialog \"Create calendar event?\\n\\n📅 $TASK\\n🕐 $HUMAN_TIME\\n📍 ${WHERE:-(no location)}\" with title \"Add to Calendar\" buttons {\"Cancel\", \"Create ✓\"} default button \"Create ✓\"" -e 'button returned of result' 2>/dev/null)
+CONFIRM=$(osascript -e "display dialog \"Create calendar event?\\n\\n📅 $DISPLAY_TASK\\n🕐 $HUMAN_TIME_DISPLAY\\n📍 ${WHERE:-(no location)}\" with title \"Add to Calendar\" buttons {\"Cancel\", \"Create ✓\"} default button \"Create ✓\"" -e 'button returned of result' 2>/dev/null)
 
 if [ "$CONFIRM" != "Create ✓" ]; then
   exit 0
 fi
 
-# Sanitise strings for AppleScript — replace " with '
-AS_TITLE="${TASK//\"/\'}"
-AS_LOCATION="${WHERE//\"/\'}"
+# Properly sanitize for AppleScript string literals
+# Order matters: escape \ first, then "
+sanitize_as() {
+  printf '%s' "$1" | tr -d '\n\r' | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+AS_TITLE=$(sanitize_as "$TASK")
+AS_LOCATION=$(sanitize_as "$WHERE")
 
 osascript << ASEOF
 tell application "Calendar"
