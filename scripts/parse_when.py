@@ -44,9 +44,9 @@ def parse_when(when_str: str, ref: datetime) -> tuple:
         event_date = ref + timedelta(days=1)
     else:
         days_map = {
-            'mon': 0, 'tue': 1, 'wed': 2, 'thu': 3, 'fri': 4, 'sat': 5, 'sun': 6,
             'monday': 0, 'tuesday': 1, 'wednesday': 2, 'thursday': 3,
             'friday': 4, 'saturday': 5, 'sunday': 6,
+            'mon': 0, 'tue': 1, 'wed': 2, 'thu': 3, 'fri': 4, 'sat': 5, 'sun': 6,
         }
         for key, dow in days_map.items():
             if re.search(r'\b' + key + r'\b', ws):
@@ -99,7 +99,10 @@ def parse_when(when_str: str, ref: datetime) -> tuple:
     start = event_date.replace(hour=hour, minute=minute, second=0, microsecond=0)
     end = start + timedelta(hours=1)
 
-    human = start.strftime('%a %b %-d · %-I:%M%p').lower()
+    day_num = start.day
+    hour_12 = start.hour % 12 or 12
+    am_pm = 'am' if start.hour < 12 else 'pm'
+    human = f"{start.strftime('%a %b')} {day_num} · {hour_12}:{start.minute:02d}{am_pm}"
 
     return start, end, human
 

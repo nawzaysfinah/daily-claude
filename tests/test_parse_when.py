@@ -74,3 +74,22 @@ def test_duration_is_one_hour():
     start, end, _ = run("tomorrow 2pm")
     assert end[3] - start[3] == 1
     assert end[4] == start[4]
+
+
+def test_year_rollover():
+    # "jan 1 9am" with ref 2026-06-08 should resolve to 2027-01-01
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "jan 1 9am", "2026-06-08"],
+        capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+    lines = result.stdout.strip().splitlines()
+    start = list(map(int, lines[0].split()))
+    assert start[:3] == [2027, 1, 1]
+    assert start[3] == 9
+
+
+def test_human_string_is_nonempty():
+    _, _, human = run("tomorrow 2pm")
+    assert len(human) > 0
+    assert '·' in human
