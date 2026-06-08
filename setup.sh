@@ -57,6 +57,16 @@ echo "✓  Add Task app installed to Desktop"
 xattr -dr com.apple.quarantine "$APP_DEST" 2>/dev/null || true
 echo "✓  Security quarantine cleared"
 
+# ── Download parse_when.py (NLP calendar parser) ─────────────────────────────
+echo "→  Downloading NLP calendar parser..."
+SCRIPTS_DEST="$INSTALL_DIR/daily-claude-scripts"
+mkdir -p "$SCRIPTS_DEST"
+
+curl -fsSL "$RAW_URL/scripts/parse_when.py" \
+  -o "$SCRIPTS_DEST/parse_when.py"
+
+echo "✓  NLP parser installed to $SCRIPTS_DEST"
+
 # ── Done ─────────────────────────────────────────────────────────────────────
 echo ""
 echo "  ✅  Setup complete!"
