@@ -118,27 +118,31 @@ while i < len(lines):
         continue
 
     if in_section and (stripped.startswith('## ') or stripped == '---'):
-        # End of section — insert task before this boundary
-        # Ensure there's a blank line before the new task if needed
-        if result and result[-1].strip() != '':
-            result.append('\n')
+        # End of section — normalize and insert task at bottom
+        # Strip trailing blank lines accumulated in this section
+        while result and result[-1].strip() == '':
+            result.pop()
+        result.append('\n')            # one blank line before task
         result.append(new_line + '\n')
+        result.append('\n')            # one blank line after task
         inserted = True
         in_section = False
 
     result.append(line)
     i += 1
 
-# Section was last in file (no following ## or ---)
+# Section was the last block in the file (no trailing ## or ---)
 if in_section and not inserted:
-    if result and result[-1].strip() != '':
-        result.append('\n')
+    while result and result[-1].strip() == '':
+        result.pop()
+    result.append('\n')
     result.append(new_line + '\n')
+    result.append('\n')
     inserted = True
 
-# Section not found — append it
+# Section header not found — append a new section
 if not inserted:
-    result.append(f'\n{section}\n{new_line}\n')
+    result.append(f'\n{section}\n\n{new_line}\n\n')
 
 with open(tasks_file, 'w') as f:
     f.writelines(result)
