@@ -59,6 +59,16 @@ fi
 # ── Load config ────────────────────────────────────────────────────────────────
 source "$CONFIG_FILE"
 
+# Resolve scripts directory — try repo-relative first, then Desktop fallback
+BUNDLE_PARENT="$(dirname "$(dirname "$(dirname "$0")")")"
+if [ -f "$BUNDLE_PARENT/scripts/parse_when.py" ]; then
+  SCRIPTS_DIR="$BUNDLE_PARENT/scripts"
+elif [ -f "$HOME/Desktop/daily-claude-scripts/parse_when.py" ]; then
+  SCRIPTS_DIR="$HOME/Desktop/daily-claude-scripts"
+else
+  SCRIPTS_DIR=""
+fi
+
 if [ ! -f "$TASKS_FILE" ]; then
   ACTION=$(osascript -e 'display dialog "TASKS.md not found at the saved path. What would you like to do?" with title "daily-claude Error" buttons {"Cancel", "Reset Config"} default button "Reset Config"' -e 'button returned of result' 2>/dev/null)
   if [ "$ACTION" = "Reset Config" ]; then
@@ -148,4 +158,117 @@ with open(tasks_file, 'w') as f:
     f.writelines(result)
 PYEOF
 
-osascript -e "display notification \"Added to $CATEGORY: $TASK\" with title \"Task added ✓\""
+osascript -e "display notification \"Added to $CATEGORY\" with title \"$TASK ✓\""
+
+# ── Optional: Add to Google Calendar ───────────────────────────────────────────
+# Require parse_when.py to be available
+if [ -z "$SCRIPTS_DIR" ] || [ ! -f "$SCRIPTS_DIR/parse_when.py" ]; then
+  exit 0
+fi
+
+CAL_CHOICE=$(osascript -e 'choose from list {"Yes", "No"} with title "Add to Calendar?" with prompt "'"$TASK"'" default items {"No"}' 2>/dev/null)
+
+if [ "$CAL_CHOICE" != "Yes" ]; then
+  exit 0
+fi
+
+# Extract raw date/time hint from task text for dialog pre-fill
+RAW_HINT=$(python3 - "$TASK" << 'HINTEOF'
+import sys, re
+task = sys.argv[1]
+fragments = []
+t = re.search(r'\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b', task, re.IGNORECASE)
+if t: fragments.append(t.group(0).strip())
+d = re.search(r'\b(?:today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun)\b', task, re.IGNORECASE)
+if d: fragments.append(d.group(0).strip())
+print(' '.join(fragments))
+HINTEOF
+)
+
+WHEN=$(osascript -e "display dialog \"When is this event?\\n\\nExamples: \\\"tomorrow 2pm\\\", \\\"Monday 3pm\\\", \\\"June 10 9am\\\"\" with title \"Add to Calendar\" default answer \"$RAW_HINT\" buttons {\"Cancel\", \"Next →\"} default button \"Next →\"" -e 'text returned of result' 2>/dev/null)
+
+if [ -z "$WHEN" ]; then
+  exit 0
+fi
+
+WHERE=$(osascript -e 'display dialog "Location? (leave blank to skip)" with title "Add to Calendar" default answer "" buttons {"Skip", "Done ✓"} default button "Done ✓"' -e 'text returned of result' 2>/dev/null)
+
+# Parse date/time into numeric fields for AppleScript
+PARSED=$(python3 "$SCRIPTS_DIR/parse_when.py" "$WHEN" "$(date '+%Y-%m-%d')" 2>/dev/null)
+
+if [ -z "$PARSED" ]; then
+  osascript -e 'display dialog "Couldn'\''t parse the date/time. Event not created." with title "Calendar Error" buttons {"OK"}' 2>/dev/null
+  exit 0
+fi
+
+S_YEAR=$(echo "$PARSED" | sed -n '1p' | awk '{print $1}')
+S_MON=$(echo  "$PARSED" | sed -n '1p' | awk '{print $2}')
+S_DAY=$(echo  "$PARSED" | sed -n '1p' | awk '{print $3}')
+S_HOUR=$(echo "$PARSED" | sed -n '1p' | awk '{print $4}')
+S_MIN=$(echo  "$PARSED" | sed -n '1p' | awk '{print $5}')
+
+E_YEAR=$(echo "$PARSED" | sed -n '2p' | awk '{print $1}')
+E_MON=$(echo  "$PARSED" | sed -n '2p' | awk '{print $2}')
+E_DAY=$(echo  "$PARSED" | sed -n '2p' | awk '{print $3}')
+E_HOUR=$(echo "$PARSED" | sed -n '2p' | awk '{print $4}')
+E_MIN=$(echo  "$PARSED" | sed -n '2p' | awk '{print $5}')
+
+HUMAN_TIME=$(echo "$PARSED" | sed -n '3p')
+
+# Confirm before creating
+CONFIRM=$(osascript -e "display dialog \"Create calendar event?\\n\\n📅 $TASK\\n🕐 $HUMAN_TIME\\n📍 ${WHERE:-(no location)}\" with title \"Add to Calendar\" buttons {\"Cancel\", \"Create ✓\"} default button \"Create ✓\"" -e 'button returned of result' 2>/dev/null)
+
+if [ "$CONFIRM" != "Create ✓" ]; then
+  exit 0
+fi
+
+# Sanitise strings for AppleScript — replace " with '
+AS_TITLE="${TASK//\"/\'}"
+AS_LOCATION="${WHERE//\"/\'}"
+
+osascript << ASEOF
+tell application "Calendar"
+    -- Build start date numerically (locale-safe, avoids strftime locale issues)
+    set startDate to current date
+    set year of startDate to $S_YEAR
+    set month of startDate to $S_MON
+    set day of startDate to $S_DAY
+    set hours of startDate to $S_HOUR
+    set minutes of startDate to $S_MIN
+    set seconds of startDate to 0
+
+    -- Build end date numerically
+    set endDate to current date
+    set year of endDate to $E_YEAR
+    set month of endDate to $E_MON
+    set day of endDate to $E_DAY
+    set hours of endDate to $E_HOUR
+    set minutes of endDate to $E_MIN
+    set seconds of endDate to 0
+
+    -- Find first non-system calendar
+    set targetCal to missing value
+    repeat with c in every calendar
+        set cName to name of c
+        if cName is not "Birthdays" and cName is not "Siri Suggestions" and cName is not "Holidays in Singapore" then
+            set targetCal to c
+            exit repeat
+        end if
+    end repeat
+    if targetCal is missing value then
+        set targetCal to first calendar
+    end if
+
+    tell targetCal
+        make new event with properties {summary:"$AS_TITLE", start date:startDate, end date:endDate, location:"$AS_LOCATION"}
+    end tell
+    reload calendars
+end tell
+ASEOF
+
+AS_STATUS=$?
+if [ $AS_STATUS -eq 0 ]; then
+  osascript -e "display notification \"$HUMAN_TIME\" with title \"Event created: $TASK\""
+else
+  osascript -e 'display dialog "Calendar event failed. Make sure Calendar.app is open and has permission." with title "Calendar Error" buttons {"OK"}' 2>/dev/null
+fi
